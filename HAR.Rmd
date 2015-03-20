@@ -1,0 +1,173 @@
+---
+title: "Machine Learning on Weight Lifting Exercise Dataset"
+output: html_document
+---
+
+#### Anna Teo
+
+### Executive Summary
+This report uses data from [Weight Lifting Exercise Dataset](http://groupware.les.inf.puc-rio.br/har). The study uses 2 different machine learning models - Tree and Random Forest to train based on the training dataset collected from the on-body sensors. 
+
+Comparing the 2 machine learning models, Random Forest has provided a higher accuracy with 99.31% and out of sample errors of 0.0069 for our dataset.
+
+We then used the Random Forest learning model to predict the fashion of how the Unilateral Dumbbell Biceps Curl is conducted for 20 test cases.
+
+### Background
+The datasets contains the various readings from on-body sensors from six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: 
+
+- Class A: exactly according to the specification 
+- Class B: throwing the elbows to the front 
+- Class C: lifting the dumbbell only halfway
+- Class D: lowering the dumbbell only halfway
+- Class E: throwing the hips to the front
+
+
+```{r initialise, echo=FALSE, results='hide'}
+knitr::opts_chunk$set(cache=TRUE)
+```
+
+### R Package Used for Analysis
+
+This analysis require the use of the following packages:
+
+- [caret](http://cran.r-project.org/web/packages/caret/index.html), which also load required package [lattice](http://cran.r-project.org/web/packages/lattice/index.html) and [ggplot2](http://cran.r-project.org/web/packages/ggplot2/index.html)
+- [rpart](http://cran.r-project.org/web/packages/rpart/index.html)
+- [rattle](http://cran.r-project.org/web/packages/rattle/index.html)
+
+```{r load_library, echo=TRUE, results='asis'}
+library(caret)
+library(rpart)
+library(rattle)
+```
+
+### Loading Data
+Load both training and testing data into memory.
+
+```{r download_data, echo=TRUE}
+## user to set working directory first
+
+## Download the data file if it does not exists in the working directory
+if (!file.exists("./pml-training.csv")) {
+        fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+        download.file(fileUrl, destfile = "./pml-training.csv", method = "curl")
+        }
+
+if (!file.exists("./pml-testing.csv")) {
+        fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+        download.file(fileUrl, destfile = "./pml-testing.csv", method = "curl")
+        }
+
+## read both datasets
+pml.train <- read.csv("./pml-training.csv", header = TRUE, na.strings = c("NA", ""))
+pml.test <- read.csv("./pml-testing.csv", header = TRUE, na.strings = c("NA", ""))
+dim(pml.train)
+dim(pml.test)
+```
+
+### Cleaning the Training Datasets
+
+There are a total of 19,622 rows x 160 columns in the training datasets. Out of which, there are 100 columns with 19,216 NA, i.e. 97.93% of rows have NA values.
+```{r NA_columns, echo=TRUE}
+na.train <- table(colSums(is.na(pml.train)))
+na.train
+```
+
+We first remove the 100 columns of majority NA values.
+
+```{r remove_NAcolumns, echo=TRUE}
+## remove columns with all NAs
+data.cols <- which(colSums(is.na(pml.train)) == 0)
+cleaned.train <- subset(pml.train[ , data.cols])
+colnames(cleaned.train)
+```
+
+From the remaining 60 columns, we next remove Columns 1 - 7 which we find that these are not features required for our learning models. 
+
+```{r remove_othercolumns, echo=TRUE}
+## remove Columns 1 - 7
+cleaned.train <- subset(cleaned.train[ , -c(1:7)])
+dim(cleaned.train)
+```
+
+Next, we plot the distribution of the 5 different fashions of performing Unilateral Dumbbell Biceps Curl for the training datasets.
+
+```{r plot_train, echo=FALSE, fig.height=4, fig.width=7}
+## Plot distribution of Class
+
+g <- ggplot(data=cleaned.train, aes(x=classe, fill=classe)) + geom_histogram() + 
+        labs(x = "Class") + labs(title = "Distribution of Class") + 
+        theme(text = element_text(size=10))
+g
+```
+
+### Data Partioning for Cross Validation
+
+After cleaning the training dataset, we split it into training and testing (for validation) datasets, using random subsampling of p = 0.75.
+```{r split_data, echo=TRUE}
+## Split the dataset for training and testing
+inTrain <- createDataPartition(y=cleaned.train$classe, p=0.75, list=FALSE)
+training <- cleaned.train[inTrain, ]
+testing <- cleaned.train[-inTrain, ]
+dim(training)
+dim(testing)
+```
+
+### Machine Learning
+Before we start to build our model, we set the seed of R's random number generator to 32786 which will allow the learning models to be reproduced. 
+```{r setseed}
+set.seed(32786)
+```
+
+### Model 1 - Tree
+We predict with learning model tree. We use rpart package which produce a more accurate learning model for our datasets.
+```{r tree, echo=TRUE}
+## Predicting with Trees
+rpmod <- rpart(classe ~ ., data=training, method="class")
+rpmod
+```
+
+Using rattle package to create a nice plot of the decision tree for our learning model.
+```{r plot_tree, echo=TRUE, fig.height=5, fig.width=10, warning=FALSE}
+## Use rattle package to do a plot of the tree
+fancyRpartPlot(rpmod, sub="", main="")
+```
+
+We then use the learning model to predict the class for our testing dataset and do a comparison of the prediction against the actual answer.
+
+```{r tree_predict, echo=TRUE}
+p.rpmod <- predict(rpmod, newdata=testing, type="class")
+confusionMatrix(testing$classe, p.rpmod)
+```
+From the result, we can see that this machine learning model has a **accuracy** of **76.24%** and **out of sample errors** of 1 - accuracy, i.e. **0.24**.
+
+
+### Model 2 - Random Forest
+We predict with learning model Random Forest. We use caret package for the analysis.
+```{r randomforest}
+rfmod <- train(classe ~ ., method="rf", data=training)
+```
+
+```{r print_randomforest}
+rfmod$finalModel
+```
+
+We then use the learning model to predict the class for our testing dataset and do a comparison of the prediction against the actual answer.
+
+```{r randomforst_predict}
+p.rfmod <- predict(rfmod, newdata=testing)
+confusionMatrix(testing$classe, p.rfmod)
+```
+From the result, we can see that this machine learning model has a **accuracy** of **99.31%** and **out of sample errors** of 1 - accuracy, i.e. **0.0069**.
+
+### Prediction
+From the 2 machine learning models, Random Forest is the most accurate. We then use the Random Forest learning model to predict 20 test cases in the pml-test.csv.
+
+```{r predict}
+answers <- predict(rfmod, newdata=pml.test)
+answers
+```
+
+
+#### Reference:
+
+[Velloso, E.](http://groupware.les.inf.puc-rio.br/collaborator.jsf?p1=evelloso); Bulling, A.; Gellersen, H.; [Ugulino, W.](http://groupware.les.inf.puc-rio.br/collaborator.jsf?p1=ugulino); [Fuks, H.](http://groupware.les.inf.puc-rio.br/collaborator.jsf?p1=hugo) [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201). Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
